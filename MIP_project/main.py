@@ -4,7 +4,7 @@ from test.test_solver import test_linear_mms, test_quad_mms
 
 
 def main():
-    grid = material_formats.GridTaurus(2, 10, 20, 15)
+    grid = material_formats.GridTaurus(2, 10, 5, 2)
     # grid.plot()
     # plt.show()
     # test_quad_mms(True)
