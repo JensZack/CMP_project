@@ -2,30 +2,21 @@
 Contains tests for the heat diffusion solver,
 Including MMS tests on the taurus grid
 """
-from material_formats import GridTaurus
+import dataclasses
+from typing import Callable
+
 import matplotlib.pyplot as plt
 
 
-def test_linear_mms(plot=False):
-    grid = GridTaurus(2, 10, 20, 20)
-    f = lambda x, y: 3 * (x - 2) + .5 * (y + 1)
 
-    for node in grid.nodes:
-        node.z = f(node.x, node.y)
-
-    if plot:
-        grid.plot()
-        plt.show()
-
-
-def test_quad_mms(plot=False):
-    grid = GridTaurus(2, 10, 20, 20)
-    f = lambda x, y: 3 * (x - 2)**2 + .5 * (y ** 2 + 3 * y + 1)
-
-    for node in grid.nodes:
-        node.z = f(node.x, node.y)
-
-    if plot:
-        grid.plot()
-        plt.show()
+def gen_mms_cubic():
+    """
+    generate the MMS object for x ** 3 + y ** 3
+    :return:
+    """
+    mms = MMS(
+        lambda x, y: x ** 3 + y ** 3,
+        lambda x, y: 6 * x + 6 * y
+    )
+    return mms
 

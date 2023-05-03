@@ -7,7 +7,7 @@ import numpy as np
 import scipy.sparse.linalg as spl
 import matplotlib.pyplot as plt
 import logging
-from typing import Optional
+from typing import Optional, Callable
 
 from scipy.sparse import csr_matrix
 
@@ -33,55 +33,16 @@ class Material:
     price: float  # $/m^3
 
 
-class Grid1d:
-    """
-    1D grid where the first and last cell have BC's applied on their boundaries
+@dataclass
+class MMS:
+    fn: Callable
+    lap: Callable
 
-    """
 
-    def __init__(self, n_cells: int, bc_type: int = 0, bc: tuple = (0, 0)):
-        """
-        Assuming a length of 1
-        :param n_cells:
-        :param bc_type:
-            0 - dirchlet
-            1 - derivative
-        :param bc
-            values applied at each boundary
-        """
-        self.n_cells = n_cells
-        self.bc_type = bc_type
-        self.bc = bc
-
-        self.grid = np.zeros(n_cells)
-        self.dx = 1 / n_cells
-        self.laplacian_matrix: Optional[csr_matrix] = None
-
-    def initialize_laplacian(self):
-        row_idx = []
-        col_idx = []
-        vals = []
-
-        # initialize diagonal
-        row_idx += list(np.arange(self.n_cells))
-        col_idx += list(np.arange(self.n_cells))
-        vals += list(np.ones(self.n_cells) * -2)
-
-        # initialize left neighbors
-        row_idx += list(np.arange(self.n_cells - 1) + 1)
-        col_idx += list(np.arange(self.n_cells - 1))
-        vals += list(np.ones(self.n_cells - 1))
-
-        # initialize right neighbors
-        row_idx += list(np.arange(self.n_cells - 1))
-        col_idx += list(np.arange(self.n_cells - 1) + 1)
-        vals += list(np.ones(self.n_cells - 1))
-
-        self.laplacian_matrix = csr_matrix((vals, (row_idx, col_idx)), dtype=int)
-        print('dbg')
-
-    def solve_laplacian(self):
-        """ """
+default_mms = MMS(
+    lambda x, y: 1,
+    lambda x, y: 0
+)
 
 
 @functools.lru_cache
@@ -106,6 +67,54 @@ def c_to_p(x, y):
             theta += 2 * np.pi
         return r, theta
 
+
+@functools.lru_cache
+def bi_quad_basis_fns():
+
+    l1 = lambda xe: (1/2) * xe * (xe - 1)
+    l2 = lambda xe: -(xe - 1) * (xe + 1)
+    l3 = lambda xe: (1/2) * xe * (xe + 1)
+
+    dl1 = lambda xe: xe - .5
+    dl2 = lambda xe: -2 * xe
+    dl3 = lambda xe: xe + .5
+
+    # basis fns:
+    b1 = lambda xe, ye: l1(xe) * l1(ye)
+    b2 = lambda xe, ye: l2(xe) * l1(ye)
+    b3 = lambda xe, ye: l3(xe) * l1(ye)
+    b4 = lambda xe, ye: l1(xe) * l2(ye)
+    b5 = lambda xe, ye: l2(xe) * l2(ye)
+    b6 = lambda xe, ye: l3(xe) * l2(ye)
+    b7 = lambda xe, ye: l1(xe) * l3(ye)
+    b8 = lambda xe, ye: l2(xe) * l3(ye)
+    b9 = lambda xe, ye: l3(xe) * l3(ye)
+
+    db1_dxe = lambda xe, ye: dl1(xe) * l1(ye)
+    db2_dxe = lambda xe, ye: dl2(xe) * l1(ye)
+    db3_dxe = lambda xe, ye: dl3(xe) * l1(ye)
+    db4_dxe = lambda xe, ye: dl1(xe) * l2(ye)
+    db5_dxe = lambda xe, ye: dl2(xe) * l2(ye)
+    db6_dxe = lambda xe, ye: dl3(xe) * l2(ye)
+    db7_dxe = lambda xe, ye: dl1(xe) * l3(ye)
+    db8_dxe = lambda xe, ye: dl2(xe) * l3(ye)
+    db9_dxe = lambda xe, ye: dl3(xe) * l3(ye)
+
+    db1_dye = lambda xe, ye: l1(xe) * dl1(ye)
+    db2_dye = lambda xe, ye: l2(xe) * dl1(ye)
+    db3_dye = lambda xe, ye: l3(xe) * dl1(ye)
+    db4_dye = lambda xe, ye: l1(xe) * dl2(ye)
+    db5_dye = lambda xe, ye: l2(xe) * dl2(ye)
+    db6_dye = lambda xe, ye: l3(xe) * dl2(ye)
+    db7_dye = lambda xe, ye: l1(xe) * dl3(ye)
+    db8_dye = lambda xe, ye: l2(xe) * dl3(ye)
+    db9_dye = lambda xe, ye: l3(xe) * dl3(ye)
+
+    basis_fns = [b1, b2, b3, b4, b5, b6, b7, b8, b9]
+    dbdxe_fns = [db1_dxe, db2_dxe, db3_dxe, db4_dxe, db5_dxe, db6_dxe, db7_dxe, db8_dxe, db9_dxe]
+    dbdye_fns = [db1_dye, db2_dye, db3_dye, db4_dye, db5_dye, db6_dye, db7_dye, db8_dye, db9_dye]
+
+    return basis_fns, dbdxe_fns, dbdye_fns
 
 @dataclass
 class Node:
@@ -148,20 +157,6 @@ class Node:
         return self.c_idx + (self.r_idx - 1) * self.n_circum
 
 
-def basis_fns():
-    b1 = lambda xe, ye: (1 / 4) * xe * (xe - 1) * ye * (ye - 1)
-    b2 = lambda xe, ye: (-1 / 2) * (xe + 1) * (xe - 1) * ye * (ye - 1)
-    b3 = lambda xe, ye: (1 / 4) * (xe + 1) * xe * ye * (ye - 1)
-    b4 = lambda xe, ye: (-1 / 2) * xe * (xe - 1) * (ye + 1) * (ye - 1)
-    b5 = lambda xe, ye: (xe + 1) * (xe - 1) * (ye + 1) * (ye - 1)
-    b6 = lambda xe, ye: (-1 / 2) * (xe + 1) * xe * (ye + 1) * (ye - 1)
-    b7 = lambda xe, ye: (1 / 4) * xe * (xe - 1) * ye * (ye + 1)
-    b8 = lambda xe, ye: (-1 / 2) * (xe + 1) * (xe - 1) * ye * (ye + 1)
-    b9 = lambda xe, ye: (1 / 4) * (xe + 1) * xe * ye * (ye + 1)
-
-    return [b1, b2, b3, b4, b5, b6, b7, b8, b9]
-
-
 @dataclass
 class Element:
     id: int
@@ -201,13 +196,20 @@ class Element:
         v = np.array([p_to_c(ri, ti) for ri, ti in zip(r, theta)])
         return v[:, 0], v[:, 1]
 
-    def plot(self):
+    def plot_nodes(self):
         """
         plot a 9x9 mesh for the 3x3 element
         :return:
         """
-        """
-        bfns = basis_fns()
+        rs = [n.r for n in self.nodes]
+        ts = [n.theta for n in self.nodes]
+        z = self.w
+        x, y = self.p_to_c(rs, ts)
+
+        return x, y, z
+
+    def plot_mesh(self):
+        bfns, _, _ = bi_quad_basis_fns()
 
         res = 9
         thetas = np.linspace(self.t_bounds[0], self.t_bounds[1], res)
@@ -224,13 +226,17 @@ class Element:
                 xb = 2 * (ti - (self.t_bounds[1] + self.t_bounds[0])/2) / (self.t_bounds[1] - self.t_bounds[0])
                 yb = 2 * (ri - (self.r_bounds[1] + self.r_bounds[0])/2) / (self.r_bounds[1] - self.r_bounds[0])
                 z[idx] += wi * bfn(xb, yb)
-        """
-        rs = [n.r for n in self.nodes]
-        ts = [n.theta for n in self.nodes]
-        z = self.w
-        x, y = self.p_to_c(rs, ts)
-
         return x, y, z
+
+    def eval(self, r: np.ndarray, t: np.ndarray):
+        z = np.zeros(r.size)
+        bfns, _, _ = bi_quad_basis_fns()
+        for idx, (ri, ti) in enumerate(zip(r, t)):
+            for wi, bfn in zip(self.w, bfns):
+                xb = 2 * (ti - (self.t_bounds[1] + self.t_bounds[0])/2) / (self.t_bounds[1] - self.t_bounds[0])
+                yb = 2 * (ri - (self.r_bounds[1] + self.r_bounds[0])/2) / (self.r_bounds[1] - self.r_bounds[0])
+                z[idx] += wi * bfn(xb, yb)
+        return z
 
 
 def rotation_mat(theta):
@@ -294,57 +300,30 @@ class GridTaurus:
                 )
                 e_id += 1
 
-        bc_fn = lambda ri, ti: ri
-        D, b = self.gen_linear_system(bc_fn)
-
-        LOGGER.info('solving linear system')
-
-        # w, error = spl.gmres(D, b, maxiter=10000)  # noqa
-
-        # if error > 0:
-        #     LOGGER.warning(f'No convergence in {error} iterations of gmres')
-
-        w = spl.spsolve(D, b)
-
-        # get w back into elements
-        for eidx, element in enumerate(self.elements):
-            self.elements[eidx].get_w(w)
-
-        LOGGER.info('plotting elements')
-        x, y, z = np.zeros(0), np.zeros(0), np.zeros(0)
-
-        for element in self.elements:
-            xe, ye, ze = element.plot()
-            x = np.concatenate([x, xe])
-            y = np.concatenate([y, ye])
-            z = np.concatenate([z, ze])
-
-        fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-        # ax.set_title(f"Element: {element.id}")
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        ax.set_zlabel("z")
-        ax.scatter(x, y, z)
-        plt.show()
+        self.D = csr_matrix(([], ([], [])), shape=(self.n_nodes, self.n_nodes))
+        self.b = np.zeros(self.n_nodes)
 
 
-    def gen_linear_system(self, bc_fn):
+    def gen_linear_system(self, bc_fn, k_fn=lambda x, y: 1, mms=default_mms):
         """
         bc_values must have length n_circum for dirchlet boundary condition
         the master element is a square with coord basis x-y
         the pd is in theta-r
         :param bc_fn: function(r, theta) to apply on boundary
+        :param k_fn:
+        :param mms:
         :return:
         """
 
-        i = []
-        j = []
-        d = []
         b = np.zeros(self.n_nodes)
+        D = csr_matrix(([], ([], [])), shape=(self.n_nodes, self.n_nodes))
 
         LOGGER.info("Computing element matrix")
         for element in self.elements:
-            self.bi_quad_me(element)
+            self.bi_quad_me(element, k=k_fn, mms_lap=mms.lap)
+            i = []
+            j = []
+            d = []
             for di in range(9):
                 if element.nodes[di].on_boundary:
                     continue
@@ -354,20 +333,27 @@ class GridTaurus:
                     d.append(element.D[di][dj])
 
                 b[element.nodes[di].nid] += element.b[di]
+            Dtmp = csr_matrix((d, (i, j)), shape=(self.n_nodes, self.n_nodes))
+            D += Dtmp
 
         LOGGER.info('applying boundary conditions')
 
+        i = []
+        j = []
+        d = []
         for nid in self.boundary_node_ids:
             node = self.nodes[nid]
             i.append(node.nid)
             j.append(node.nid)
             d.append(1)
-            b[node.nid] = bc_fn(node.r, node.theta)
+            b[node.nid] = bc_fn(node.x, node.y)
 
-        D = csr_matrix((np.array(d), (np.array(i), np.array(j))), shape=(self.n_nodes, self.n_nodes))
-        return D, b
+        Dtmp = csr_matrix((d, (i, j)), shape=(self.n_nodes, self.n_nodes))
+        D += Dtmp
+        self.D = D
+        self.b = b
 
-    def bi_quad_me(self, element: Element, k=lambda r, t: 1, mms_lap=lambda r, t: 0):
+    def bi_quad_me(self, element: Element, k, mms_lap=lambda x, y: 0):
         """
         iterate over nodes starting at 0, going to nodes that are 2 from the outer boundary
 
@@ -387,46 +373,30 @@ class GridTaurus:
         j: list of basis fn numbers
         c: list of d_i,j values
         """
-        basis_fns, dbdxe_fns, dbdye_fns = self.bi_quad_basis_fns
+        basis_fns, dbdxe_fns, dbdye_fns = bi_quad_basis_fns()
         nodes = element.nodes
         e_idxs = list(range(9))
-
-        # dtheta_dx = (nodes[2].theta - nodes[0].theta) / 2
-        # dr_dy = (nodes[6].r - nodes[0].r) / 2
-        # det_j = np.abs(dtheta_dx * dr_dy)
-        # det_j = lambda r: 1/r
-        det_j = np.zeros(25)
 
         dtheta_dx = np.zeros(25)
         dtheta_dy = np.zeros(25)
         dr_dx = np.zeros(25)
         dr_dy = np.zeros(25)
 
-        # dx_dtheta = np.zeros(25)
-        # dx_dr = np.zeros(25)
-        # dy_dtheta = np.zeros(25)
-        # dy_dr = np.zeros(25)
-
-        rphys = np.zeros(25)
-        tphys = np.zeros(25)
+        yphys = np.zeros(25)
+        xphys = np.zeros(25)
 
         # compute these partial derivatives for all gauss points
         gx, gy, gw = self.gauss_points5
 
         for idx, (gxi, gyi) in enumerate(zip(gx, gy)):
             for db_dy, db_dx, bfn, node in zip(dbdye_fns, dbdxe_fns, basis_fns, nodes):
-                rphys[idx] += node.r * bfn(gxi, gyi)
-                tphys[idx] += node.theta * bfn(gxi, gyi)
+                yphys[idx] += node.y * bfn(gxi, gyi)
+                xphys[idx] += node.x * bfn(gxi, gyi)
 
-                dtheta_dx[idx] += node.theta * db_dx(gxi, gyi)
-                dtheta_dy[idx] += node.theta * db_dy(gxi, gyi)
-                dr_dx[idx] += node.r * db_dx(gxi, gyi)
-                dr_dy[idx] += node.r * db_dy(gxi, gyi)
-
-                # dx_dtheta[idx] += node.r * db_dy(gxi, gyi) / det_j(np.sqrt((node.x + gxi) ** 2 + (node.y + gyi) ** 2))
-                # dx_dr[idx] += node.theta * db_dy(gxi, gyi) / -det_j(np.sqrt((node.x + gxi) ** 2 + (node.y + gyi) ** 2))
-                # dy_dtheta[idx] += node.r * db_dx(gxi, gyi) / -det_j(np.sqrt((node.x + gxi) ** 2 + (node.y + gyi) ** 2))
-                # dy_dr[idx] += node.theta * db_dx(gxi, gyi) / det_j(np.sqrt((node.x + gxi) ** 2 + (node.y + gyi) ** 2))
+                dtheta_dx[idx] += node.x * db_dx(gxi, gyi)
+                dtheta_dy[idx] += node.x * db_dy(gxi, gyi)
+                dr_dx[idx] += node.y * db_dx(gxi, gyi)
+                dr_dy[idx] += node.y * db_dy(gxi, gyi)
 
         det_j = dtheta_dx * dr_dy - dtheta_dy * dr_dx
         dx_dtheta = dr_dy / det_j
@@ -434,7 +404,7 @@ class GridTaurus:
         dy_dtheta = -dr_dx / det_j
         dy_dr = dtheta_dx / det_j
 
-        kphys = np.array([k(r, t) for r, t in zip(rphys, tphys)])
+        kphys = np.array([k(x, y) for x, y in zip(xphys, yphys)])
 
         for idx1, node1, basis1, dbxe1, dbye1 in zip(e_idxs, nodes, basis_fns, dbdxe_fns, dbdye_fns):
             for idx2, node2, basis2, dbxe2, dbye2 in zip(e_idxs[idx1:], nodes[idx1:], basis_fns[idx1:], dbdxe_fns[idx1:], dbdye_fns[idx1:]):
@@ -449,17 +419,39 @@ class GridTaurus:
                 element.D[idx2, idx1] = d
 
             for gidx, (gxi, gyi, gwi) in enumerate(zip(gx, gy, gw)):
-                element.b[idx1] -= gwi * det_j[gidx] * basis1(gxi, gyi) * mms_lap(rphys[gidx], tphys[gidx])
+                element.b[idx1] -= gwi * det_j[gidx] * kphys[gidx] * basis1(gxi, gyi) * mms_lap(xphys[gidx], yphys[gidx])
 
-    def plot(self):
+    def solve_linear_system(self):
+        LOGGER.info('solving linear system')
+        w = spl.spsolve(self.D, self.b)
+
+        # get w back into elements
+        for eidx, element in enumerate(self.elements):
+            self.elements[eidx].get_w(w)
+
+    def plot(self, plot_type='mesh', fn=None):
+        LOGGER.info('plotting elements')
+        x, y, z = np.zeros(0), np.zeros(0), np.zeros(0)
+
+        for element in self.elements:
+            if plot_type == 'mesh':
+                xe, ye, ze = element.plot_mesh()
+            else:
+                xe, ye, ze = element.plot_nodes()
+
+            x = np.concatenate([x, xe])
+            y = np.concatenate([y, ye])
+            z = np.concatenate([z, ze])
+
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-        ax.scatter(
-            [n.x for n in self.nodes],
-            [n.y for n in self.nodes],
-            [n.z for n in self.nodes],
-        )
-        for element in self.elements22:
-            element.add_grid_lines(ax)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_zlabel("z")
+        ax.scatter(x, y, z, color='r')
+        if fn is not None:
+            f = np.vectorize(fn)
+            ax.scatter(x, y, f(x, y), color='b')
+        plt.show()
 
     def id_map(self, r, s):
         """
@@ -480,8 +472,8 @@ class GridTaurus:
         w1 = (322 - 13 * np.sqrt(70)) / 900
         w2 = (322 + 13 * np.sqrt(70)) / 900
         w3 = 128/225
-        w4 = -w2
-        w5 = -w1
+        w4 = w2
+        w5 = w1
 
         x = np.array([x1, x2, x3, x4, x5] * 5)
         y = np.array([x1] * 5 + [x2] * 5 + [x3] * 5 + [x4] * 5 + [x5] * 5)
@@ -493,42 +485,3 @@ class GridTaurus:
 
         return x, y, w
 
-    @functools.cached_property
-    def bi_quad_basis_fns(self):
-
-        # basis fns:
-        b1 = lambda xe, ye: (1/4) * xe * (xe - 1) * ye * (ye - 1)
-        b2 = lambda xe, ye: (-1/2) * (xe + 1) * (xe - 1) * ye * (ye - 1)
-        b3 = lambda xe, ye: (1/4) * (xe + 1) * xe * ye * (ye - 1)
-        b4 = lambda xe, ye: (-1/2) * xe * (xe - 1) * (ye + 1) * (ye - 1)
-        b5 = lambda xe, ye: (xe + 1) * (xe - 1) * (ye + 1) * (ye - 1)
-        b6 = lambda xe, ye: (-1/2) * (xe + 1) * xe * (ye + 1) * (ye - 1)
-        b7 = lambda xe, ye: (1/4) * xe * (xe - 1) * ye * (ye + 1)
-        b8 = lambda xe, ye: (-1/2) * (xe + 1) * (xe - 1) * ye * (ye + 1)
-        b9 = lambda xe, ye: (1/4) * (xe + 1) * xe * ye * (ye + 1)
-
-        db1_dxe = lambda xe, ye: (1/4) * (2 * xe - 1) * ye * (ye - 1)
-        db2_dxe = lambda xe, ye: (-1/2) * (2 * xe) * ye * (ye - 1)
-        db3_dxe = lambda xe, ye: (1/4) * (2 * xe + 1) * ye * (ye - 1)
-        db4_dxe = lambda xe, ye: (-1/2) * (2 * xe - 1) * (ye + 1) * (ye - 1)
-        db5_dxe = lambda xe, ye: (2 * xe) * (ye + 1) * (ye - 1)
-        db6_dxe = lambda xe, ye: (-1/2) * (2 * xe + 1) * (ye + 1) * (ye - 1)
-        db7_dxe = lambda xe, ye: (1/4) * (2 * xe - 1) * ye * (ye + 1)
-        db8_dxe = lambda xe, ye: (-1/2) * (2 * xe) * ye * (ye + 1)
-        db9_dxe = lambda xe, ye: (1/4) * (2 * xe + 1) * ye * (ye + 1)
-
-        db1_dye = lambda xe, ye: (1/4) * xe * (xe - 1) * (2 * ye - 1)
-        db2_dye = lambda xe, ye: (-1/2) * (xe + 1) * (xe - 1) * (2 * ye - 1)
-        db3_dye = lambda xe, ye: (1/4) * (xe + 1) * xe * ye * (2 * ye - 1)
-        db4_dye = lambda xe, ye: (-1/2) * xe * (xe - 1) * (2 * ye)
-        db5_dye = lambda xe, ye: (xe + 1) * (xe - 1) * (2 * ye)
-        db6_dye = lambda xe, ye: (-1/2) * (xe + 1) * xe * (2 * ye)
-        db7_dye = lambda xe, ye: (1/4) * xe * (xe - 1) * (2 * ye + 1)
-        db8_dye = lambda xe, ye: (-1/2) * (xe + 1) * (xe - 1) * (2 * ye + 1)
-        db9_dye = lambda xe, ye: (1/4) * (xe + 1) * xe * (2 * ye + 1)
-
-        basis_fns = [b1, b2, b3, b4, b5, b6, b7, b8, b9]
-        dbdxe_fns = [db1_dxe, db2_dxe, db3_dxe, db4_dxe, db5_dxe, db6_dxe, db7_dxe, db8_dxe, db9_dxe]
-        dbdye_fns = [db1_dye, db2_dye, db3_dye, db4_dye, db5_dye, db6_dye, db7_dye, db8_dye, db9_dye]
-
-        return basis_fns, dbdxe_fns, dbdye_fns
