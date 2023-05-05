@@ -13,6 +13,7 @@ Contents
    :maxdepth: 2
 
    grid_torus
+   test_harness
 
 
 Test Results

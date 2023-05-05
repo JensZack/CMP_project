@@ -1,6 +1,6 @@
 import fea_grid
 import matplotlib.pyplot as plt
-from test.test_solver import gen_mms_quad
+from fea_grid.test import gen_mms_quad
 
 
 def main():
@@ -8,7 +8,7 @@ def main():
     mms = gen_mms_quad()
     grid.gen_linear_system(bc_fn=mms.fn, mms=mms)
     grid.solve_linear_system()
-    grid.plot(plot_type='nodes', mms=mms)
+    grid.plot(plot_type='nodes')
     plt.show()
 
 
