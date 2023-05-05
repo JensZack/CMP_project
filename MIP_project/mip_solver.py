@@ -1,11 +1,5 @@
-from material_formats import Material
+from fea_grid import Material
 import numpy as np
-
-
-class MIPNode:
-
-    def __init__(self):
-
 
 
 class MIPSolver:
