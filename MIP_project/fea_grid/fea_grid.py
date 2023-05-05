@@ -451,18 +451,17 @@ class GridTorus:
         xphys = np.zeros(25)
 
         # compute these partial derivatives for all gauss points
-        gx, gy, gw = gauss_points5()
+        gxi, gyi, gwi = gauss_points5()
         gidx = np.arange(25)
 
-        for gidx, (gxi, gyi) in enumerate(zip(gx, gy)):
-            for db_dy, db_dx, bfn, node in zip(dbdye_fns, dbdxe_fns, basis_fns, nodes):
-                yphys[gidx] += node.y * bfn(gxi, gyi)
-                xphys[gidx] += node.x * bfn(gxi, gyi)
+        for db_dy, db_dx, bfn, node in zip(dbdye_fns, dbdxe_fns, basis_fns, nodes):
+            yphys[gidx] += node.y * bfn(gxi, gyi)
+            xphys[gidx] += node.x * bfn(gxi, gyi)
 
-                dx_dxi[gidx] += node.x * db_dx(gxi, gyi)
-                dx_dyi[gidx] += node.x * db_dy(gxi, gyi)
-                dy_dxi[gidx] += node.y * db_dx(gxi, gyi)
-                dy_dyi[gidx] += node.y * db_dy(gxi, gyi)
+            dx_dxi[gidx] += node.x * db_dx(gxi, gyi)
+            dx_dyi[gidx] += node.x * db_dy(gxi, gyi)
+            dy_dxi[gidx] += node.y * db_dx(gxi, gyi)
+            dy_dyi[gidx] += node.y * db_dy(gxi, gyi)
 
         det_j = dx_dxi * dy_dyi - dx_dyi * dy_dxi
         dxi_dx = dy_dyi / det_j
@@ -475,19 +474,16 @@ class GridTorus:
         for idx1, node1, basis1, dbxe1, dbye1 in zip(e_idxs, nodes, basis_fns, dbdxe_fns, dbdye_fns):
             for idx2, node2, basis2, dbxe2, dbye2 in zip(e_idxs[idx1:], nodes[idx1:], basis_fns[idx1:],
                                                          dbdxe_fns[idx1:], dbdye_fns[idx1:]):
-                d = 0
-                for gidx, (gxi, gyi, gwi) in enumerate(zip(gx, gy, gw)):
-                    db_dy1 = dbxe1(gxi, gyi) * dxi_dy[gidx] + dbye1(gxi, gyi) * dyi_dy[gidx]
-                    db_dx1 = dbxe1(gxi, gyi) * dxi_dx[gidx] + dbye1(gxi, gyi) * dyi_dx[gidx]
-                    db_dy2 = dbxe2(gxi, gyi) * dxi_dy[gidx] + dbye2(gxi, gyi) * dyi_dy[gidx]
-                    db_dx2 = dbxe2(gxi, gyi) * dxi_dx[gidx] + dbye2(gxi, gyi) * dyi_dx[gidx]
-                    d += kphys[gidx] * gwi * det_j[gidx] * (db_dy1 * db_dy2 + db_dx1 * db_dx2)
+                db_dy1 = dbxe1(gxi, gyi) * dxi_dy[gidx] + dbye1(gxi, gyi) * dyi_dy[gidx]
+                db_dx1 = dbxe1(gxi, gyi) * dxi_dx[gidx] + dbye1(gxi, gyi) * dyi_dx[gidx]
+                db_dy2 = dbxe2(gxi, gyi) * dxi_dy[gidx] + dbye2(gxi, gyi) * dyi_dy[gidx]
+                db_dx2 = dbxe2(gxi, gyi) * dxi_dx[gidx] + dbye2(gxi, gyi) * dyi_dx[gidx]
+                d = (kphys[gidx] * gwi * det_j[gidx] * (db_dy1 * db_dy2 + db_dx1 * db_dx2)).sum()
                 element.D[idx1, idx2] = d
                 element.D[idx2, idx1] = d
 
             if mms is not None:
-                for gidx, (gxi, gyi, gwi) in enumerate(zip(gx, gy, gw)):
-                    element.b[idx1] -= gwi * det_j[gidx] * basis1(gxi, gyi) * mms.fn(xphys[gidx], yphys[gidx])
+                element.b[idx1] -= gwi * det_j[gidx] * basis1(gxi, gyi) * mms.fn(xphys[gidx], yphys[gidx])
 
 
     def solve_linear_system(self):
