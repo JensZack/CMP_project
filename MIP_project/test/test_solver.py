@@ -8,14 +8,15 @@ import pathlib
 from pylatex import Document, Section, Math, Figure
 from pylatex.utils import NoEscape
 from fea_grid import MMS, GridTorus, gauss_points5, Node, Element
-from gen_test_d import gen_test_d_c, gen_test_d_polar
+from test.gen_test_d import gen_test_d_c, gen_test_d_polar
 
 
 
 def gen_mms_cubic():
     """
     generate the MMS object for x^3 + y^3
-    :return:
+
+    :return mms: MMS object
     """
     mms = MMS(
         lambda x, y: x ** 3 + y ** 3,
@@ -29,7 +30,8 @@ def gen_mms_cubic():
 def gen_mms_quad():
     """
     generate the MMS object for x^2 + y^2
-    :return:
+
+    :return mms: MMS object
     """
     mms = MMS(
         lambda x, y: x ** 2 + y ** 2,
@@ -43,7 +45,8 @@ def gen_mms_quad():
 def gen_mms_linear():
     """
     generate the MMS object for x + y
-    :return:
+
+    :return mms: MMS object
     """
     mms = MMS(
         lambda x, y: x + y,

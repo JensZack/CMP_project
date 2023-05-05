@@ -483,7 +483,7 @@ class GridTorus:
                 element.D[idx2, idx1] = d
 
             if mms is not None:
-                element.b[idx1] -= gwi * det_j[gidx] * basis1(gxi, gyi) * mms.fn(xphys[gidx], yphys[gidx])
+                element.b[idx1] -= (gwi * det_j[gidx] * basis1(gxi, gyi) * mms.fn(xphys[gidx], yphys[gidx])).sum()
 
 
     def solve_linear_system(self):

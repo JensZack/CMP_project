@@ -77,11 +77,3 @@ def gen_test_d_polar(res=100):
             D[i, j] = quad.sum()
             D[j, i] = quad.sum()
     return D
-
-
-def main():
-    print(gen_test_d_polar())
-
-
-if __name__ == '__main__':
-    main()
