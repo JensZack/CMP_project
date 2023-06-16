@@ -8,7 +8,7 @@ import pathlib
 
 from pylatex import Document, Section, Math, Figure
 from pylatex.utils import NoEscape
-from fea_grid import MMS, GridTorus, gauss_points5, Node, Element
+from fea_grid.fea_grid import MMS, GridTorus, gauss_points5, Node, Element
 from fea_grid.test.gen_test_d import gen_test_d_c, gen_test_d_polar
 
 
@@ -58,6 +58,20 @@ def gen_mms_linear():
     return mms
 
 
+def gen_mms_spectral():
+    """
+    generate the MMS object for f(x, y) = sin(x) + cos(y)
+    :return:
+    """
+    mms = MMS(
+        lambda x, y: np.sin(x) + np.cos(y),
+        lambda x, y: -(np.sin(x) + np.cos(y)),
+        "f(x, y) = sin(x) + cos(y)",
+        "spectral_mms"
+    )
+    return mms
+
+
 def mms_latex_result_file(mms_list, l2_means):
     doc = Document()
 
@@ -102,6 +116,7 @@ def test_mms():
         gen_mms_linear(),
         gen_mms_quad(),
         gen_mms_cubic(),
+        gen_mms_spectral(),
     ]
     diffs = []
     fns = []

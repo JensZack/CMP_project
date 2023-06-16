@@ -8,6 +8,7 @@ import scipy.sparse.linalg as spl
 import matplotlib.pyplot as plt
 import logging
 from typing import Optional, Callable
+# from test.gen_test_d import gen_test_d_polar
 
 from scipy.sparse import csr_matrix
 
@@ -201,6 +202,74 @@ class Element:
     def nids(self):
         return [n.nid for n in self.nodes]
 
+    def gen_linear_component_test(self, k, mms=None):
+        D = gen_test_d_polar(self.r_bounds[0], self.r_bounds[1], self.t_bounds[0], self.t_bounds[1])
+
+
+    def gen_linear_component(self, k, mms=None):
+        """
+        For an element of the fea mesh, generate the D matrix and the b vector
+        given k and possibly a function for the mms laplacian. This method will
+        save the D and b results into the element, so it returns nothing
+
+        xi, yi are the coordinate names in the master element
+        x, y are the coordinates from the physical domain
+
+        master element layout:
+           7 | 8 | 9 \n
+           4 | 5 | 6 \n
+           1 | 2 | 3 \n
+
+        :param k: heat diffusion constant across the torus, function of x, y
+        :param mms: method of manufacture object containing laplacian funtion
+        """
+        basis_fns, dbdxe_fns, dbdye_fns = bi_quad_basis_fns()
+        nodes = self.nodes
+        e_idxs = list(range(9))
+
+        dx_dxi = np.zeros(25)
+        dx_dyi = np.zeros(25)
+        dy_dxi = np.zeros(25)
+        dy_dyi = np.zeros(25)
+
+        yphys = np.zeros(25)
+        xphys = np.zeros(25)
+
+        # compute these partial derivatives for all gauss points
+        gxi, gyi, gwi = gauss_points5()
+        gidx = np.arange(25)
+
+        for db_dy, db_dx, bfn, node in zip(dbdye_fns, dbdxe_fns, basis_fns, nodes):
+            yphys[gidx] += node.y * bfn(gxi, gyi)
+            xphys[gidx] += node.x * bfn(gxi, gyi)
+
+            dx_dxi[gidx] += node.x * db_dx(gxi, gyi)
+            dx_dyi[gidx] += node.x * db_dy(gxi, gyi)
+            dy_dxi[gidx] += node.y * db_dx(gxi, gyi)
+            dy_dyi[gidx] += node.y * db_dy(gxi, gyi)
+
+        det_j = dx_dxi * dy_dyi - dx_dyi * dy_dxi
+        dxi_dx = dy_dyi / det_j
+        dxi_dy = -dx_dyi / det_j
+        dyi_dx = -dy_dxi / det_j
+        dyi_dy = dx_dxi / det_j
+
+        kphys = np.array([k(x, y) for x, y in zip(xphys, yphys)])
+
+        for idx1, node1, basis1, dbxe1, dbye1 in zip(e_idxs, nodes, basis_fns, dbdxe_fns, dbdye_fns):
+            for idx2, node2, basis2, dbxe2, dbye2 in zip(e_idxs[idx1:], nodes[idx1:], basis_fns[idx1:],
+                                                         dbdxe_fns[idx1:], dbdye_fns[idx1:]):
+                db_dy1 = dbxe1(gxi, gyi) * dxi_dy[gidx] + dbye1(gxi, gyi) * dyi_dy[gidx]
+                db_dx1 = dbxe1(gxi, gyi) * dxi_dx[gidx] + dbye1(gxi, gyi) * dyi_dx[gidx]
+                db_dy2 = dbxe2(gxi, gyi) * dxi_dy[gidx] + dbye2(gxi, gyi) * dyi_dy[gidx]
+                db_dx2 = dbxe2(gxi, gyi) * dxi_dx[gidx] + dbye2(gxi, gyi) * dyi_dx[gidx]
+                d = (kphys[gidx] * gwi * det_j[gidx] * (db_dy1 * db_dy2 + db_dx1 * db_dx2)).sum()
+                self.D[idx1, idx2] = d
+                self.D[idx2, idx1] = d
+
+            if mms is not None:
+                self.b[idx1] -= (gwi * det_j[gidx] * basis1(gxi, gyi) * mms.lap(xphys[gidx], yphys[gidx])).sum()
+
     def get_w(self, w):
         """
         given the global w, populate local w
@@ -386,7 +455,7 @@ class GridTorus:
 
         LOGGER.info("Computing element matrix")
         for element in self.elements:
-            self.bi_quad_me(element, k=k_fn, mms=mms)
+            element.gen_linear_component(k=k_fn, mms=mms)
             i = []
             j = []
             d = []
